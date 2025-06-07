@@ -1,0 +1,460 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#ffffff" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>上班價值感</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    body {
+      background-color: #f3f4f6;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 0;
+    }
+    .container {
+      max-width: 448px;
+      width: 100%;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    .screen {
+      display: none;
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+    .screen.active {
+      display: block;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 16px;
+      color: #1f2937;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 20px;
+      background-color: #e5e7eb;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .progress-fill {
+      height: 100%;
+      background-color: #2563eb;
+      transition: width 0.5s ease-in-out;
+    }
+    .button {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 8px;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      color: white;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    .button.blue {
+      background-color: #2563eb;
+    }
+    .button.blue:hover {
+      background-color: #1d4ed8;
+    }
+    .button.gray {
+      background-color: #6b7280;
+    }
+    .button.gray:hover {
+      background-color: #4b5563;
+    }
+    label {
+      display: block;
+      font-size: 14px;
+      color: #374151;
+      margin-bottom: 4px;
+    }
+    input, select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 16px;
+      margin-bottom: 16px;
+      box-sizing: border-box;
+    }
+    p {
+      font-size: 16px;
+      color: #1f2937;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #333;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 5px;
+      opacity: 0;
+      transition: opacity 0.5s ease-in-out;
+      z-index: 1000;
+    }
+    .toast.show {
+      opacity: 1;
+    }
+    .input-block {
+      margin-bottom: 16px;
+    }
+    .input-helper {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    .share-text {
+      font-size: 14px;
+      color: #1f2937;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" class="container">
+    <div id="home-screen" class="screen active">
+      <h1 id="home-title">上班價值感</h1>
+      <div>
+        <p id="current-unit">目前單位：珍奶 (NT$50)</p>
+        <p id="unit-count">累積：0 個</p>
+      </div>
+      <div class="progress-bar">
+        <div id="progress-bar" class="progress-fill" style="width: 0%"></div>
+      </div>
+      <button id="settings-btn" class="button blue">設定薪資</button>
+      <button id="change-unit-btn" class="button blue">更換單位</button>
+      <button id="daily-summary-btn" class="button blue">今日紀錄</button>
+    </div>
+
+    <div id="settings-screen" class="screen">
+      <h1 id="settings-title">薪資袋設定</h1>
+      <div class="input-block">
+        <label for="salary-type">薪資類型</label>
+        <select id="salary-type">
+          <option value="hourly">時薪</option>
+          <option value="monthly">月薪</option>
+          <option value="yearly">年薪</option>
+        </select>
+      </div>
+      <div class="input-block">
+        <label for="salary-value">薪資數值 (NT$)</label>
+        <input id="salary-value" type="number" placeholder="輸入金額">
+      </div>
+      <div class="input-block">
+        <label for="work-start">上班時間</label>
+        <input id="work-start" type="time" value="09:00">
+      </div>
+      <div class="input-block">
+        <label for="work-end">下班時間</label>
+        <input id="work-end" type="time" value="17:00">
+      </div>
+      <div class="input-block">
+        <label for="break-time">不支薪休息時間（分鐘）</label>
+        <input id="break-time" type="number" placeholder="輸入休息時間">
+        <p id="break-time-note" class="input-helper"></p>
+      </div>
+      <button id="save-settings-btn" class="button blue">儲存設定</button>
+      <button id="back-home-btn" class="button gray">返回主畫面</button>
+    </div>
+
+    <div id="unit-selection-screen" class="screen">
+      <h1 id="unit-selection-title">更換單位</h1>
+      <div class="input-block">
+        <label for="unit-select">選擇單位</label>
+        <select id="unit-select">
+          <option value="bubble_tea">珍奶 (NT$50)</option>
+          <option value="chicken_cutlet">雞排 (NT$80)</option>
+          <option value="ice_cream">冰淇淋 (NT$30)</option>
+        </select>
+      </div>
+      <button id="save-unit-btn" class="button blue">儲存單位</button>
+    </div>
+
+    <div id="daily-summary-screen" class="screen">
+      <h1 id="daily-summary-title">今日累積紀錄</h1>
+      <p id="daily-unit-count">今日累積：0 個珍奶 🧋</p>
+      <p id="share-text" class="share-text"></p>
+      <button id="share-btn" class="button blue">複製分享內容</button>
+      <button id="close-summary-btn" class="button gray">關閉</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="text/javascript">
+    let state = {
+      salaryType: localStorage.getItem("salaryType") || "monthly",
+      salaryValue: parseInt(localStorage.getItem("salaryValue")) || 0,
+      workStart: localStorage.getItem("workStart") || "09:00",
+      workEnd: localStorage.getItem("workEnd") || "17:00",
+      breakTime: parseInt(localStorage.getItem("breakTime")) || 0,
+      currentUnit: localStorage.getItem("currentUnit") || "bubble_tea",
+      accumulatedUnits: 0,
+      perSecondIncome: 0
+    };
+
+    const screens = {
+      home: document.getElementById("home-screen"),
+      settings: document.getElementById("settings-screen"),
+      unitSelection: document.getElementById("unit-selection-screen"),
+      dailySummary: document.getElementById("daily-summary-screen")
+    };
+
+    const units = {
+      bubble_tea: { name: "珍奶", price: 50, icon: "🧋" },
+      chicken_cutlet: { name: "雞排", price: 80, icon: "🍗" },
+      ice_cream: { name: "冰淇淋", price: 30, icon: "🍦" }
+    };
+
+    function generateShareText(count, unit) {
+      const templates = [
+        `今天的努力已經變成 ${count} 份 ${unit.name}${unit.icon}，我自己都佩服我自己！`,
+        `如果一份 ${unit.name}${unit.icon} 等於一點快樂，那我今天快樂值 +${count}！`,
+        `我今天上班累積 ${count} ${unit.name}${unit.icon}，這就是「有形的努力」！`,
+        `分析完成：你的今日貢獻約等於 ${count} ${unit.name}${unit.icon}。請繼續輸出。`,
+        `別人用時薪算錢，我用 ${unit.name}${unit.icon} 衡量靈魂。今天 ${count} 份，還行。`,
+        `今天打開任意門，工作瞬間變出 ${count} 份 ${unit.name}${unit.icon}！小叮噹都驚呆。`,
+        `持續燃燒中🔥 今日上班魂累積：${count} ${unit.name}${unit.icon}。戰鬥值提升！`,
+        `我今天不是在工作，我是在煉金！已鍊成 ${count} 份 ${unit.name}${unit.icon}！`,
+        `努力工作不為別的，只為換來 ${count} 份 ${unit.name}${unit.icon}。值了。`,
+        `這不是雞排，這是一小時的尊嚴！今天我收穫了 ${count} 份 ${unit.name}${unit.icon}！`
+      ];
+      const randomIndex = Math.floor(Math.random() * templates.length);
+      return templates[randomIndex];
+    }
+
+    function showScreen(screenId) {
+      Object.values(screens).forEach(screen => screen.classList.remove("active"));
+      screens[screenId].classList.add("active");
+      if (screenId === "settings") {
+        setSettingsValues();
+        updateBreakTimeNote();
+      } else if (screenId === "dailySummary") {
+        updateShareText();
+      }
+      updateUI();
+    }
+
+    function setSettingsValues() {
+      document.getElementById("salary-type").value = state.salaryType;
+      document.getElementById("salary-value").value = state.salaryValue || "";
+      document.getElementById("work-start").value = state.workStart;
+      document.getElementById("work-end").value = state.workEnd;
+      document.getElementById("break-time").value = state.breakTime || "";
+    }
+
+    function updateBreakTimeNote() {
+      const note = document.getElementById("break-time-note");
+      if (state.salaryType === "hourly") {
+        note.innerHTML = '※ 此欄位會影響您的實際工作時間與收入計算，請如實填寫不支薪的休息時長。';
+      } else {
+        note.innerHTML = '※ 此欄位僅供個人紀錄使用，<strong>不影響薪資計算</strong>，可視需要填寫或留空。';
+      }
+    }
+
+    function updateUI() {
+      const unit = units[state.currentUnit];
+      document.getElementById("current-unit").textContent = `目前單位：${unit.name} (NT$${unit.price})`;
+      document.getElementById("unit-count").textContent = `累積：${Math.floor(state.accumulatedUnits)} 個`;
+      document.getElementById("progress-bar").style.width = `${(state.accumulatedUnits % 1) * 100}%`;
+      document.getElementById("daily-unit-count").textContent = `今日累積：${Math.floor(state.accumulatedUnits)} 個${unit.name} ${unit.icon}`;
+    }
+
+    function updateShareText() {
+      const count = Math.floor(state.accumulatedUnits);
+      const unit = units[state.currentUnit];
+      const shareText = generateShareText(count, unit);
+      document.getElementById("share-text").textContent = shareText;
+    }
+
+    function calculatePerSecondIncome() {
+      const [startHour, startMinute] = state.workStart.split(":").map(Number);
+      let [endHour, endMinute] = state.workEnd.split(":").map(Number);
+      if (endHour < startHour || (endHour === startHour && endMinute < startMinute)) {
+        endHour += 24;
+      }
+      const rawMinutes = (endHour * 60 + endMinute) - (startHour * 60 + startMinute);
+      let workMinutes;
+      if (state.salaryType === "hourly") {
+        workMinutes = rawMinutes - state.breakTime;
+      } else {
+        workMinutes = rawMinutes; // 月薪與年薪不扣除休息時間
+      }
+      if (workMinutes <= 0) {
+        state.perSecondIncome = 0;
+        return;
+      }
+      let dailySalary;
+      if (state.salaryType === "hourly") {
+        dailySalary = state.salaryValue * (workMinutes / 60);
+      } else if (state.salaryType === "monthly") {
+        dailySalary = state.salaryValue / 30;
+      } else if (state.salaryType === "yearly") {
+        dailySalary = state.salaryValue / 360;
+      }
+      state.perSecondIncome = dailySalary / (workMinutes * 60);
+    }
+
+    setInterval(() => {
+      const now = new Date();
+      let [startHour, startMinute] = state.workStart.split(":").map(Number);
+      let [endHour, endMinute] = state.workEnd.split(":").map(Number);
+      let startTime = new Date();
+      startTime.setHours(startHour, startMinute, 0, 0);
+      let endTime = new Date();
+      endTime.setHours(endHour, endMinute, 0, 0);
+
+      if (endHour < startHour || (endHour === startHour && endMinute < startMinute)) {
+        endTime.setDate(endTime.getDate() + 1);
+      }
+      if (now < startTime) {
+        startTime.setDate(startTime.getDate() - 1);
+        endTime.setDate(endTime.getDate() - 1);
+      }
+
+      const totalWorkSeconds = (endTime - startTime) / 1000;
+      let elapsedSeconds;
+
+      if (now < startTime) {
+        elapsedSeconds = 0;
+      } else if (now <= endTime) {
+        elapsedSeconds = (now - startTime) / 1000;
+      } else {
+        elapsedSeconds = totalWorkSeconds;
+      }
+
+      const earned = state.perSecondIncome * elapsedSeconds;
+      const unitPrice = units[state.currentUnit].price;
+      state.accumulatedUnits = earned / unitPrice;
+
+      updateUI();
+    }, 1000);
+
+    document.getElementById("salary-type").addEventListener("change", (e) => {
+      state.salaryType = e.target.value;
+      updateBreakTimeNote();
+    });
+
+    document.getElementById("save-settings-btn").addEventListener("click", () => {
+      state.salaryType = document.getElementById("salary-type").value;
+      state.salaryValue = parseInt(document.getElementById("salary-value").value) || 0;
+      state.workStart = document.getElementById("work-start").value || "09:00";
+      state.workEnd = document.getElementById("work-end").value || "17:00";
+      state.breakTime = parseInt(document.getElementById("break-time").value) || 0;
+
+      localStorage.setItem("salaryType", state.salaryType);
+      localStorage.setItem("salaryValue", state.salaryValue);
+      localStorage.setItem("workStart", state.workStart);
+      localStorage.setItem("workEnd", state.workEnd);
+      localStorage.setItem("breakTime", state.breakTime);
+
+      calculatePerSecondIncome();
+      showScreen("home");
+    });
+
+    document.getElementById("settings-btn").addEventListener("click", () => showScreen("settings"));
+    document.getElementById("change-unit-btn").addEventListener("click", () => showScreen("unitSelection"));
+    document.getElementById("daily-summary-btn").addEventListener("click", () => showScreen("dailySummary"));
+    document.getElementById("back-home-btn").addEventListener("click", () => showScreen("home"));
+    document.getElementById("save-unit-btn").addEventListener("click", () => {
+      state.currentUnit = document.getElementById("unit-select").value;
+      localStorage.setItem("currentUnit", state.currentUnit);
+      showScreen("home");
+    });
+    document.getElementById("close-summary-btn").addEventListener("click", () => showScreen("home"));
+
+    document.getElementById("share-btn").addEventListener("click", () => {
+      const shareText = document.getElementById("share-text").textContent;
+      navigator.clipboard.writeText(shareText).then(() => {
+        showToast("✅ 分享內容已複製！");
+      }).catch(() => {
+        showToast("⚠️ 複製失敗，請手動長按上方文字選取分享");
+      });
+    });
+
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => {
+        toast.classList.remove("show");
+      }, 2000);
+    }
+
+    // Service Worker Registration
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then((registration) => {
+          console.log('Service Worker registered with scope:', registration.scope);
+        })
+        .catch((error) => {
+          console.error('Service Worker registration failed:', error);
+        });
+    }
+
+    calculatePerSecondIncome();
+    updateUI();
+    updateBreakTimeNote();
+  </script>
+</body>
+</html>
